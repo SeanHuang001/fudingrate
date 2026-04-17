@@ -180,6 +180,32 @@
     .muted {
       color: var(--muted);
     }
+
+    .exchange-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot-open {
+      background: #16a34a;
+    }
+
+    .dot-closed {
+      background: #9ca3af;
+    }
+
+    .dot-holiday {
+      background: #dc2626;
+    }
   </style>
 </head>
 <body>
@@ -222,9 +248,9 @@
             <th class="sortable" data-sort="symbol">合约 <span id="sort-symbol"></span></th>
             <th class="sortable align-right" data-sort="markPrice">标记价格 <span id="sort-markPrice"></span></th>
             <th class="sortable align-right" data-sort="rate">当前资金费率 <span id="sort-rate"></span></th>
-            <th class="align-right">下次结算倒计时</th>
             <th class="align-right">费率趋势</th>
             <th class="align-right">最新结算费率（参考）</th>
+            <th class="align-right">交易所</th>
           </tr>
         </thead>
         <tbody id="table-body">
@@ -245,6 +271,19 @@
 
     const REFRESH_INTERVAL_MS = 15000;
     const HIGH_RATE_THRESHOLD = 0.001; // 0.1%
+    const EXCHANGE_STATUS_REFRESH_MS = 60000;
+
+    const US_EQUITY_SYMBOLS = new Set([
+      "TSLAUSDT", "HOODUSDT", "MSTRUSDT", "COINUSDT", "PLTRUSDT",
+      "METAUSDT", "NVDAUSDT", "GOOGLUSDT", "AAPLUSDT", "TSMUSDT",
+      "SNDKUSDT", "INTCUSDT", "AMZNUSDT", "CRCLUSDT", "PAYPUSDT",
+      "EWYUSDT", "EWJUSDT", "QQQUSDT", "SPYUSDT", "MUUSDT"
+    ]);
+
+    const CME_NYMEX_SYMBOLS = new Set([
+      "CLUSDT", "BZUSDT", "NATGASUSDT", "COPPERUSDT",
+      "XAUUSDT", "XAGUSDT", "XPTUSDT", "XPDUSDT"
+    ]);
 
     let marketRows = [];
     let previousRateMap = new Map();
@@ -293,6 +332,88 @@
       const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
       const ss = String(totalSec % 60).padStart(2, "0");
       return `${hh}:${mm}:${ss}`;
+    }
+
+    function isEasternDST(date) {
+      const year = date.getUTCFullYear();
+      // 3月第二个周日
+      const mar = new Date(Date.UTC(year, 2, 1));
+      const dstStart = new Date(Date.UTC(year, 2,
+        (7 - mar.getUTCDay() + 7) % 7 + 8));
+      // 11月第一个周日
+      const nov = new Date(Date.UTC(year, 10, 1));
+      const dstEnd = new Date(Date.UTC(year, 10,
+        (7 - nov.getUTCDay()) % 7 + 1));
+      return date >= dstStart && date < dstEnd;
+    }
+
+    function getUSEquityStatus(symbol, nowUtc) {
+      const utcYear = nowUtc.getUTCFullYear();
+      const holidaySet2026 = new Set([
+        "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+        "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25"
+      ]);
+
+      const offsetHours = isEasternDST(nowUtc) ? -4 : -5;
+      const eastern = new Date(nowUtc.getTime() + offsetHours * 3600 * 1000);
+      const eastYear = eastern.getUTCFullYear();
+      const eastMonth = String(eastern.getUTCMonth() + 1).padStart(2, "0");
+      const eastDay = String(eastern.getUTCDate()).padStart(2, "0");
+      const eastDateKey = `${eastYear}-${eastMonth}-${eastDay}`;
+      const eastWeekday = eastern.getUTCDay(); // 0 Sun ... 6 Sat
+
+      if (utcYear === 2026 && holidaySet2026.has(eastDateKey)) {
+        return { text: "休市", dotClass: "dot-holiday" };
+      }
+      if (eastWeekday === 0 || eastWeekday === 6) {
+        return { text: "已收盘", dotClass: "dot-closed" };
+      }
+
+      const minutes = eastern.getUTCHours() * 60 + eastern.getUTCMinutes();
+      const openMinutes = 9 * 60 + 30;
+      const closeMinutes = 16 * 60;
+      if (minutes >= openMinutes && minutes < closeMinutes) {
+        return { text: "开盘中", dotClass: "dot-open" };
+      }
+      return { text: "已收盘", dotClass: "dot-closed" };
+    }
+
+    function getCMENymexStatus(symbol, nowUtc) {
+      const year = nowUtc.getUTCFullYear();
+      const month = String(nowUtc.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(nowUtc.getUTCDate()).padStart(2, "0");
+      const dateKey = `${year}-${month}-${day}`;
+      const weekday = nowUtc.getUTCDay(); // 0 Sun ... 6 Sat
+      const hour = nowUtc.getUTCHours();
+      const minutes = hour * 60 + nowUtc.getUTCMinutes();
+
+      if (dateKey === "2026-04-03") {
+        if (minutes >= 17 * 60) {
+          return { text: "休市", dotClass: "dot-holiday" };
+        }
+      }
+
+      if (weekday === 6) {
+        return { text: "已收盘", dotClass: "dot-closed" };
+      }
+      if (weekday === 0 && minutes < 23 * 60) {
+        return { text: "已收盘", dotClass: "dot-closed" };
+      }
+      if (minutes >= 22 * 60 && minutes < 23 * 60) {
+        return { text: "已收盘", dotClass: "dot-closed" };
+      }
+      return { text: "开盘中", dotClass: "dot-open" };
+    }
+
+    function getExchangeStatus(symbol) {
+      const nowUtc = new Date();
+      if (US_EQUITY_SYMBOLS.has(symbol)) {
+        return getUSEquityStatus(symbol, nowUtc);
+      }
+      if (CME_NYMEX_SYMBOLS.has(symbol)) {
+        return getCMENymexStatus(symbol, nowUtc);
+      }
+      return { text: "已收盘", dotClass: "dot-closed" };
     }
 
     function getTrendArrow(symbol, currentRate) {
@@ -385,15 +506,20 @@
         const recentSettledText = recentSettledRate !== undefined
           ? formatRatePercent(recentSettledRate)
           : "-";
+        const exchangeStatus = getExchangeStatus(row.symbol);
 
         return `
           <tr class="${rowClass}">
             <td><strong>${row.baseSymbol}</strong></td>
             <td class="align-right">${formatPrice(row.markPrice)}</td>
             <td class="align-right ${rateClass}">${formatRatePercent(rate)}</td>
-            <td class="align-right">${formatCountdown(row.nextFundingTime, now)}</td>
             <td class="align-right">${trend}</td>
             <td class="align-right">${recentSettledText}</td>
+            <td class="align-right">
+              <span class="exchange-status">
+                <span class="status-dot ${exchangeStatus.dotClass}"></span>${exchangeStatus.text}
+              </span>
+            </td>
           </tr>
         `;
       }).join("");
@@ -423,17 +549,12 @@
     function updateLiveCountdowns() {
       if (!marketRows.length) return;
       const now = Date.now();
-      const visibleRows = sortRows(getFilteredRows(marketRows));
-      const rows = Array.from(el.tbody.querySelectorAll("tr"));
-      rows.forEach((tr, idx) => {
-        const row = visibleRows[idx];
-        if (!row) return;
-        const countdownCell = tr.children[3];
-        if (countdownCell) {
-          countdownCell.textContent = formatCountdown(row.nextFundingTime, now);
-        }
-      });
       el.statNearestCountdown.textContent = formatCountdown(nearestFundingTs, now);
+    }
+
+    function refreshExchangeStatusOnly() {
+      if (!marketRows.length) return;
+      renderTable();
     }
 
     async function fetchPremiumIndexBatch() {
@@ -545,6 +666,7 @@
       await refreshData();
       setInterval(refreshData, REFRESH_INTERVAL_MS);
       setInterval(updateLiveCountdowns, 1000);
+      setInterval(refreshExchangeStatusOnly, EXCHANGE_STATUS_REFRESH_MS);
     }
 
     bootstrap();
