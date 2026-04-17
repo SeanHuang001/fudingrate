@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Binance 资金费率监控</title>
+  <style>
+    :root {
+      --border: #e6e8eb;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --bg: #f7f8fa;
+      --positive: #15803d;
+      --negative: #dc2626;
+      --warning-pos-bg: #fff3cd;
+      --warning-neg-bg: #cce5ff;
+      --warning-pos-text: #c1121f;
+      --warning-neg-text: #1d4ed8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      font-size: 14px;
+    }
+
+    .stat-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fcfcfd;
+    }
+
+    .stat-title {
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn {
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #111827;
+      padding: 7px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .btn.active {
+      border-color: #2563eb;
+      color: #2563eb;
+      background: #eff6ff;
+      font-weight: 600;
+    }
+
+    .status {
+      margin-left: auto;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 860px;
+    }
+
+    thead th {
+      background: #f3f4f6;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: #374151;
+      text-align: left;
+      padding: 10px 12px;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      white-space: nowrap;
+    }
+
+    tbody td {
+      border-bottom: 1px solid #f1f2f4;
+      padding: 10px 12px;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    th.sortable {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .align-right {
+      text-align: right;
+    }
+
+    .rate-positive {
+      color: var(--positive);
+    }
+
+    .rate-negative {
+      color: var(--negative);
+    }
+
+    .rate-warning-positive {
+      color: var(--warning-pos-text);
+      font-weight: 700;
+    }
+
+    .rate-warning-negative {
+      color: var(--warning-neg-text);
+      font-weight: 700;
+    }
+
+    .row-warning-positive {
+      background: var(--warning-pos-bg);
+    }
+
+    .row-warning-negative {
+      background: var(--warning-neg-bg);
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Binance 永续合约资金费率监控</h1>
+
+    <div class="panel">
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-title">高费率合约数（|费率| &gt; 0.1%）</div>
+          <div class="stat-value" id="stat-high-rate">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">正费率 / 负费率合约数</div>
+          <div class="stat-value" id="stat-pos-neg">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">最近结算倒计时</div>
+          <div class="stat-value" id="stat-nearest-countdown">--:--:--</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">最后更新时间</div>
+          <div class="stat-value" id="stat-last-update">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel toolbar" id="filter-toolbar">
+      <button class="btn active" data-filter="all">全部</button>
+      <button class="btn" data-filter="high">仅高费率（|费率| &gt; 0.1%）</button>
+      <button class="btn" data-filter="positive">仅正费率</button>
+      <button class="btn" data-filter="negative">仅负费率</button>
+      <span class="status" id="status-text">初始化中...</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" data-sort="symbol">合约 <span id="sort-symbol"></span></th>
+            <th class="sortable align-right" data-sort="markPrice">标记价格 <span id="sort-markPrice"></span></th>
+            <th class="sortable align-right" data-sort="rate">当前资金费率 <span id="sort-rate"></span></th>
+            <th class="align-right">下次结算倒计时</th>
+            <th class="align-right">费率趋势</th>
+            <th class="align-right">最新结算费率（参考）</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <tr><td colspan="6" class="muted">正在加载数据...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const SYMBOLS = [
+      "XAUUSDT", "XAGUSDT", "TSLAUSDT", "XPTUSDT", "XPDUSDT", "INTCUSDT", "HOODUSDT",
+      "MSTRUSDT", "AMZNUSDT", "CRCLUSDT", "COINUSDT", "PLTRUSDT", "COPPERUSDT",
+      "EWYUSDT", "EWJUSDT", "PAYPUSDT", "METAUSDT", "NVDAUSDT", "GOOGLUSDT",
+      "CLUSDT", "BZUSDT", "NATGASUSDT", "QQQUSDT", "SPYUSDT", "AAPLUSDT",
+      "TSMUSDT", "MUUSDT", "SNDKUSDT"
+    ];
+
+    const REFRESH_INTERVAL_MS = 15000;
+    const HIGH_RATE_THRESHOLD = 0.001; // 0.1%
+
+    let marketRows = [];
+    let previousRateMap = new Map();
+    let recentSettledRateMap = new Map();
+    let activeFilter = "all";
+    let sortState = { key: "rateAbs", order: "desc" };
+    let lastUpdateAt = null;
+    let nearestFundingTs = null;
+
+    const el = {
+      tbody: document.getElementById("table-body"),
+      status: document.getElementById("status-text"),
+      statHighRate: document.getElementById("stat-high-rate"),
+      statPosNeg: document.getElementById("stat-pos-neg"),
+      statNearestCountdown: document.getElementById("stat-nearest-countdown"),
+      statLastUpdate: document.getElementById("stat-last-update"),
+      toolbar: document.getElementById("filter-toolbar"),
+      sortIndicators: {
+        symbol: document.getElementById("sort-symbol"),
+        markPrice: document.getElementById("sort-markPrice"),
+        rate: document.getElementById("sort-rate")
+      }
+    };
+
+    function formatRatePercent(rateDecimal) {
+      const value = Number(rateDecimal) * 100;
+      if (!Number.isFinite(value)) return "-";
+      return `${value.toFixed(4)}%`;
+    }
+
+    function formatPrice(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return "-";
+      const fractionDigits = n >= 100 ? 2 : n >= 1 ? 4 : 6;
+      return n.toLocaleString("en-US", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: fractionDigits
+      });
+    }
+
+    function formatCountdown(targetTs, nowTs = Date.now()) {
+      if (!targetTs || !Number.isFinite(targetTs)) return "--:--:--";
+      const diffMs = Math.max(0, targetTs - nowTs);
+      const totalSec = Math.floor(diffMs / 1000);
+      const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+      const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+      const ss = String(totalSec % 60).padStart(2, "0");
+      return `${hh}:${mm}:${ss}`;
+    }
+
+    function getTrendArrow(symbol, currentRate) {
+      const prev = previousRateMap.get(symbol);
+      if (prev === undefined) return "—";
+      const delta = Number(currentRate) - Number(prev);
+      const epsilon = 1e-10;
+      if (delta > epsilon) return "↑";
+      if (delta < -epsilon) return "↓";
+      return "—";
+    }
+
+    function getFilteredRows(rows) {
+      if (activeFilter === "high") {
+        return rows.filter((row) => Math.abs(row.lastFundingRate) > HIGH_RATE_THRESHOLD);
+      }
+      if (activeFilter === "positive") {
+        return rows.filter((row) => row.lastFundingRate > 0);
+      }
+      if (activeFilter === "negative") {
+        return rows.filter((row) => row.lastFundingRate < 0);
+      }
+      return rows;
+    }
+
+    function sortRows(rows) {
+      const sorted = [...rows];
+      const direction = sortState.order === "asc" ? 1 : -1;
+
+      sorted.sort((a, b) => {
+        if (sortState.key === "symbol") {
+          return a.baseSymbol.localeCompare(b.baseSymbol) * direction;
+        }
+        if (sortState.key === "markPrice") {
+          return (a.markPrice - b.markPrice) * direction;
+        }
+        if (sortState.key === "rate") {
+          return (a.lastFundingRate - b.lastFundingRate) * direction;
+        }
+        const absDiff = Math.abs(a.lastFundingRate) - Math.abs(b.lastFundingRate);
+        if (absDiff !== 0) return absDiff * direction;
+        return a.baseSymbol.localeCompare(b.baseSymbol);
+      });
+
+      return sorted;
+    }
+
+    function updateSortIndicators() {
+      Object.values(el.sortIndicators).forEach((node) => {
+        node.textContent = "";
+      });
+      if (sortState.key === "symbol") {
+        el.sortIndicators.symbol.textContent = sortState.order === "asc" ? "▲" : "▼";
+      } else if (sortState.key === "markPrice") {
+        el.sortIndicators.markPrice.textContent = sortState.order === "asc" ? "▲" : "▼";
+      } else if (sortState.key === "rate") {
+        el.sortIndicators.rate.textContent = sortState.order === "asc" ? "▲" : "▼";
+      } else {
+        el.sortIndicators.rate.textContent = "▼|绝对值|";
+      }
+    }
+
+    function renderTable() {
+      const rows = sortRows(getFilteredRows(marketRows));
+      if (!rows.length) {
+        el.tbody.innerHTML = `<tr><td colspan="6" class="muted">当前筛选条件下无数据</td></tr>`;
+        return;
+      }
+
+      const now = Date.now();
+      const html = rows.map((row) => {
+        const rate = row.lastFundingRate;
+        const trend = getTrendArrow(row.symbol, rate);
+
+        let rowClass = "";
+        let rateClass = "";
+        if (rate > HIGH_RATE_THRESHOLD) {
+          rowClass = "row-warning-positive";
+          rateClass = "rate-warning-positive";
+        } else if (rate < -HIGH_RATE_THRESHOLD) {
+          rowClass = "row-warning-negative";
+          rateClass = "rate-warning-negative";
+        } else if (rate > 0) {
+          rateClass = "rate-positive";
+        } else if (rate < 0) {
+          rateClass = "rate-negative";
+        }
+
+        const recentSettledRate = recentSettledRateMap.get(row.symbol);
+        const recentSettledText = recentSettledRate !== undefined
+          ? formatRatePercent(recentSettledRate)
+          : "-";
+
+        return `
+          <tr class="${rowClass}">
+            <td><strong>${row.baseSymbol}</strong></td>
+            <td class="align-right">${formatPrice(row.markPrice)}</td>
+            <td class="align-right ${rateClass}">${formatRatePercent(rate)}</td>
+            <td class="align-right">${formatCountdown(row.nextFundingTime, now)}</td>
+            <td class="align-right">${trend}</td>
+            <td class="align-right">${recentSettledText}</td>
+          </tr>
+        `;
+      }).join("");
+
+      el.tbody.innerHTML = html;
+    }
+
+    function updateStats() {
+      const highCount = marketRows.filter((r) => Math.abs(r.lastFundingRate) > HIGH_RATE_THRESHOLD).length;
+      const posCount = marketRows.filter((r) => r.lastFundingRate > 0).length;
+      const negCount = marketRows.filter((r) => r.lastFundingRate < 0).length;
+
+      const nearest = marketRows
+        .map((r) => r.nextFundingTime)
+        .filter((ts) => Number.isFinite(ts) && ts > 0)
+        .sort((a, b) => a - b)[0];
+      nearestFundingTs = nearest || null;
+
+      el.statHighRate.textContent = String(highCount);
+      el.statPosNeg.textContent = `${posCount} / ${negCount}`;
+      el.statNearestCountdown.textContent = formatCountdown(nearestFundingTs);
+      el.statLastUpdate.textContent = lastUpdateAt
+        ? lastUpdateAt.toLocaleTimeString("zh-CN", { hour12: false })
+        : "-";
+    }
+
+    function updateLiveCountdowns() {
+      if (!marketRows.length) return;
+      const now = Date.now();
+      const visibleRows = sortRows(getFilteredRows(marketRows));
+      const rows = Array.from(el.tbody.querySelectorAll("tr"));
+      rows.forEach((tr, idx) => {
+        const row = visibleRows[idx];
+        if (!row) return;
+        const countdownCell = tr.children[3];
+        if (countdownCell) {
+          countdownCell.textContent = formatCountdown(row.nextFundingTime, now);
+        }
+      });
+      el.statNearestCountdown.textContent = formatCountdown(nearestFundingTs, now);
+    }
+
+    async function fetchPremiumIndexBatch() {
+      const res = await fetch("/api/premium", { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error(`premium 请求失败: ${res.status}`);
+      }
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error("服务器连接 Binance 失败，请检查服务器网络");
+      }
+      return json.data;
+    }
+
+    async function fetchRecentFundingRates() {
+      const tasks = SYMBOLS.map(async (symbol) => {
+        const url = `/api/funding-rate/${symbol}`;
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) return { symbol, rate: undefined };
+        const data = await res.json();
+        if (data && data.success === false) return { symbol, rate: undefined };
+        const last = Array.isArray(data) && data[0] ? Number(data[0].fundingRate) : undefined;
+        return { symbol, rate: Number.isFinite(last) ? last : undefined };
+      });
+
+      const list = await Promise.all(tasks);
+      const map = new Map();
+      list.forEach((item) => {
+        if (item.rate !== undefined) {
+          map.set(item.symbol, item.rate);
+        }
+      });
+      return map;
+    }
+
+    async function refreshData() {
+      try {
+        el.status.textContent = "更新中...";
+
+        const [batchData, fundingRateMap] = await Promise.all([
+          fetchPremiumIndexBatch(),
+          fetchRecentFundingRates()
+        ]);
+
+        const targetSet = new Set(SYMBOLS);
+        const rows = batchData
+          .filter((item) => targetSet.has(item.symbol))
+          .map((item) => ({
+            symbol: item.symbol,
+            baseSymbol: item.symbol.replace("USDT", ""),
+            markPrice: Number(item.markPrice),
+            lastFundingRate: Number(item.lastFundingRate),
+            nextFundingTime: Number(item.nextFundingTime)
+          }))
+          .filter((item) =>
+            Number.isFinite(item.markPrice) &&
+            Number.isFinite(item.lastFundingRate) &&
+            Number.isFinite(item.nextFundingTime)
+          );
+
+        marketRows.forEach((r) => {
+          previousRateMap.set(r.symbol, r.lastFundingRate);
+        });
+
+        marketRows = rows;
+        recentSettledRateMap = fundingRateMap;
+        lastUpdateAt = new Date();
+
+        updateStats();
+        renderTable();
+        updateSortIndicators();
+
+        el.status.textContent = `已更新 ${lastUpdateAt.toLocaleTimeString("zh-CN", { hour12: false })}`;
+      } catch (err) {
+        el.status.textContent = `更新失败：${err.message}`;
+      }
+    }
+
+    function bindEvents() {
+      el.toolbar.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-filter]");
+        if (!btn) return;
+        activeFilter = btn.dataset.filter;
+        el.toolbar.querySelectorAll("button[data-filter]").forEach((b) => {
+          b.classList.toggle("active", b === btn);
+        });
+        renderTable();
+      });
+
+      document.querySelector("thead").addEventListener("click", (event) => {
+        const th = event.target.closest("th.sortable");
+        if (!th) return;
+        const nextKey = th.dataset.sort;
+
+        if (sortState.key === nextKey) {
+          sortState.order = sortState.order === "asc" ? "desc" : "asc";
+        } else {
+          sortState.key = nextKey;
+          sortState.order = nextKey === "symbol" ? "asc" : "desc";
+        }
+        renderTable();
+        updateSortIndicators();
+      });
+    }
+
+    async function bootstrap() {
+      bindEvents();
+      updateSortIndicators();
+      await refreshData();
+      setInterval(refreshData, REFRESH_INTERVAL_MS);
+      setInterval(updateLiveCountdowns, 1000);
+    }
+
+    bootstrap();
+  </script>
+</body>
+</html>
