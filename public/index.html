@@ -250,7 +250,7 @@
             <th class="sortable align-right" data-sort="rate">当前资金费率 <span id="sort-rate"></span></th>
             <th class="align-right">费率趋势</th>
             <th class="align-right">最新结算费率（参考）</th>
-            <th class="align-right">交易所</th>
+            <th class="sortable align-right" data-sort="exchange">交易所 <span id="sort-exchange"></span></th>
           </tr>
         </thead>
         <tbody id="table-body">
@@ -304,7 +304,8 @@
       sortIndicators: {
         symbol: document.getElementById("sort-symbol"),
         markPrice: document.getElementById("sort-markPrice"),
-        rate: document.getElementById("sort-rate")
+        rate: document.getElementById("sort-rate"),
+        exchange: document.getElementById("sort-exchange")
       }
     };
 
@@ -416,6 +417,13 @@
       return { text: "已收盘", dotClass: "dot-closed" };
     }
 
+    function getExchangeSortRank(symbol) {
+      const statusText = getExchangeStatus(symbol).text;
+      if (statusText === "开盘中") return 0;
+      if (statusText === "已收盘") return 1;
+      return 2; // 休市
+    }
+
     function getTrendArrow(symbol, currentRate) {
       const prev = previousRateMap.get(symbol);
       if (prev === undefined) return "—";
@@ -453,6 +461,11 @@
         if (sortState.key === "rate") {
           return (a.lastFundingRate - b.lastFundingRate) * direction;
         }
+        if (sortState.key === "exchange") {
+          const rankDiff = getExchangeSortRank(a.symbol) - getExchangeSortRank(b.symbol);
+          if (rankDiff !== 0) return rankDiff * direction;
+          return a.baseSymbol.localeCompare(b.baseSymbol);
+        }
         const absDiff = Math.abs(a.lastFundingRate) - Math.abs(b.lastFundingRate);
         if (absDiff !== 0) return absDiff * direction;
         return a.baseSymbol.localeCompare(b.baseSymbol);
@@ -471,6 +484,8 @@
         el.sortIndicators.markPrice.textContent = sortState.order === "asc" ? "▲" : "▼";
       } else if (sortState.key === "rate") {
         el.sortIndicators.rate.textContent = sortState.order === "asc" ? "▲" : "▼";
+      } else if (sortState.key === "exchange") {
+        el.sortIndicators.exchange.textContent = sortState.order === "asc" ? "▲" : "▼";
       } else {
         el.sortIndicators.rate.textContent = "▼|绝对值|";
       }
