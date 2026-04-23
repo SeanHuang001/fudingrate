@@ -24,6 +24,8 @@ const ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000;
 const FUNDING_ALERT_THRESHOLD = 0.001;
 const lastAlertSentAt = new Map();
 
+let alertHistory = [];
+
 const US_EQUITY_SYMBOLS = new Set([
   "TSLAUSDT", "HOODUSDT", "MSTRUSDT", "COINUSDT", "PLTRUSDT",
   "METAUSDT", "NVDAUSDT", "GOOGLUSDT", "AAPLUSDT", "TSMUSDT",
@@ -208,6 +210,16 @@ async function sendFundingAlertEmail(item) {
   });
 
   console.log("[ALERT] 邮件发送成功");
+
+  alertHistory.push({
+    symbol: item.symbol,
+    markPrice: item.markPrice,
+    fundingRate: item.lastFundingRate,
+    timestamp: Date.now()
+  });
+  while (alertHistory.length > 100) {
+    alertHistory.shift();
+  }
 }
 
 function processPremiumAlerts(data) {
@@ -280,6 +292,10 @@ app.get("/api/premium", async (req, res) => {
       error: error.name === "AbortError" ? "请求 Binance 超时" : error.message
     });
   }
+});
+
+app.get("/api/alert-history", (req, res) => {
+  res.json({ success: true, data: alertHistory });
 });
 
 app.get("/api/funding-rate/:symbol", async (req, res) => {

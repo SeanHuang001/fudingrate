@@ -206,6 +206,96 @@
     .dot-holiday {
       background: #dc2626;
     }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+
+    .modal-overlay.is-open {
+      display: flex;
+    }
+
+    .modal-content {
+      width: 100%;
+      max-width: 720px;
+      max-height: min(90vh, 640px);
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: #f9fafb;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .modal-body {
+      padding: 0;
+      overflow: auto;
+      flex: 1;
+    }
+
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      min-width: 100%;
+    }
+
+    .history-table th {
+      background: #f3f4f6;
+      border-bottom: 1px solid var(--border);
+      color: #374151;
+      text-align: left;
+      padding: 10px 14px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .history-table th.align-right,
+    .history-table td.align-right {
+      text-align: right;
+    }
+
+    .history-table td {
+      border-bottom: 1px solid #f1f2f4;
+      padding: 10px 14px;
+      color: var(--text);
+    }
+
+    .history-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .modal-footer {
+      padding: 12px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      background: #fcfcfd;
+    }
   </style>
 </head>
 <body>
@@ -238,6 +328,7 @@
       <button class="btn" data-filter="high">仅高费率（|费率| &gt; 0.1%）</button>
       <button class="btn" data-filter="positive">仅正费率</button>
       <button class="btn" data-filter="negative">仅负费率</button>
+      <button class="btn" id="btn-history" style="margin-left: 12px; background: #374151; color: white;">推送历史</button>
       <span class="status" id="status-text">初始化中...</span>
     </div>
 
@@ -257,6 +348,30 @@
           <tr><td colspan="6" class="muted">正在加载数据...</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <div id="modal-history" class="modal-overlay" aria-hidden="true">
+    <div class="modal-content" id="modal-history-panel">
+      <div class="modal-header">
+        <h2>最近推送历史 (Recent Alerts)</h2>
+      </div>
+      <div class="modal-body">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>合约</th>
+              <th class="align-right">价格</th>
+              <th class="align-right">费率</th>
+              <th class="align-right">推送时间</th>
+            </tr>
+          </thead>
+          <tbody id="history-table-body"></tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="modal-history-close">关闭</button>
+      </div>
     </div>
   </div>
 
@@ -672,6 +787,73 @@
         }
         renderTable();
         updateSortIndicators();
+      });
+
+      const modalHistory = document.getElementById("modal-history");
+      const historyTbody = document.getElementById("history-table-body");
+      const btnHistory = document.getElementById("btn-history");
+      const btnHistoryClose = document.getElementById("modal-history-close");
+
+      function closeAlertHistoryModal() {
+        modalHistory.classList.remove("is-open");
+        modalHistory.setAttribute("aria-hidden", "true");
+      }
+
+      async function openAlertHistoryModal() {
+        modalHistory.classList.add("is-open");
+        modalHistory.setAttribute("aria-hidden", "false");
+        historyTbody.innerHTML = `<tr><td colspan="4" class="muted">加载中...</td></tr>`;
+
+        let rows = [];
+        try {
+          const res = await fetch("/api/alert-history", { cache: "no-store" });
+          const json = await res.json();
+          if (!res.ok || !json.success || !Array.isArray(json.data)) {
+            throw new Error("bad response");
+          }
+          rows = [...json.data].sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
+        } catch {
+          historyTbody.innerHTML = `<tr><td colspan="4" class="muted">暂无历史</td></tr>`;
+          return;
+        }
+
+        if (!rows.length) {
+          historyTbody.innerHTML = `<tr><td colspan="4" class="muted">暂无历史</td></tr>`;
+          return;
+        }
+
+        historyTbody.innerHTML = rows.map((row) => {
+          const sym = String(row.symbol || "");
+          const base = sym.replace("USDT", "");
+          const rate = Number(row.fundingRate);
+          const rateClass = rate > 0 ? "rate-positive" : rate < 0 ? "rate-negative" : "";
+          const timeStr = new Date(Number(row.timestamp)).toLocaleString("zh-CN", {
+            timeZone: "Asia/Shanghai",
+            hour12: false
+          });
+          return `
+            <tr>
+              <td><strong>${base || sym || "-"}</strong></td>
+              <td class="align-right">${formatPrice(row.markPrice)}</td>
+              <td class="align-right ${rateClass}">${formatRatePercent(row.fundingRate)}</td>
+              <td class="align-right">${timeStr}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      btnHistory.addEventListener("click", () => {
+        void openAlertHistoryModal();
+      });
+
+      btnHistoryClose.addEventListener("click", () => {
+        closeAlertHistoryModal();
+      });
+
+      modalHistory.addEventListener("click", (event) => {
+        if (event.target === modalHistory) {
+          closeAlertHistoryModal();
+        }
       });
     }
 
