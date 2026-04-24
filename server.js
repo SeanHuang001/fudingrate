@@ -178,7 +178,7 @@ function getMailTransporter() {
   return mailTransporter;
 }
 
-async function sendFundingAlertEmail(item) {
+async function sendFundingAlertEmail(item, remainingMinutes) {
   const transporter = getMailTransporter();
   if (!transporter) {
     console.log("[ALERT] 跳过邮件发送：gmailAppPassword 为空");
@@ -191,11 +191,12 @@ async function sendFundingAlertEmail(item) {
   const nextFundingTime = item.nextFundingTime;
   const now = new Date();
 
-  const subject = `⚠️ 资金费率预警：${symbol} ${fundingPct}`;
+  const subject = `⚠️ 结算预警（剩余${remainingMinutes}分钟）：${symbol} ${fundingPct}`;
   const body =
     `合约：${symbol}\n` +
     `当前资金费率：${fundingPct}\n` +
     `标记价格：${markPrice}\n` +
+    `距离结算：还有 ${remainingMinutes} 分钟\n` +
     `交易所状态：开盘中\n` +
     `触发时间：${formatTimeUTC(now)} / ${formatTimeUTC8(now)}\n` +
     `下次结算时间：${formatNextFundingUTC8(nextFundingTime)}`;
@@ -224,6 +225,7 @@ async function sendFundingAlertEmail(item) {
 
 function processPremiumAlerts(data) {
   const now = Date.now();
+  const oneHour = 60 * 60 * 1000;
   for (const item of data) {
     if (!item || !item.symbol) continue;
     const symbol = item.symbol;
@@ -231,6 +233,8 @@ function processPremiumAlerts(data) {
 
     const rate = Number(item.lastFundingRate);
     if (!Number.isFinite(rate) || Math.abs(rate) <= FUNDING_ALERT_THRESHOLD) continue;
+    const timeToNextFunding = Number(item.nextFundingTime) - now;
+    if (!Number.isFinite(timeToNextFunding) || timeToNextFunding <= 0 || timeToNextFunding > oneHour) continue;
     if (!isTraditionalExchangeOpen(symbol)) continue;
 
     const last = lastAlertSentAt.get(symbol) || 0;
@@ -240,7 +244,8 @@ function processPremiumAlerts(data) {
     }
 
     lastAlertSentAt.set(symbol, now);
-    sendFundingAlertEmail(item).catch((err) => {
+    const remainingMinutes = Math.ceil(timeToNextFunding / (60 * 1000));
+    sendFundingAlertEmail(item, remainingMinutes).catch((err) => {
       console.log(`[ALERT] 邮件发送失败：${symbol} ${err.message}`);
       lastAlertSentAt.delete(symbol);
     });
