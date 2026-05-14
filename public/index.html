@@ -112,8 +112,9 @@
       border-radius: 10px;
     }
 
-    table {
+    table.data-table {
       width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       min-width: 860px;
     }
@@ -148,6 +149,11 @@
     }
 
     .align-right {
+      text-align: right;
+    }
+
+    thead th.align-right,
+    tbody td.align-right {
       text-align: right;
     }
 
@@ -186,6 +192,12 @@
       align-items: center;
       gap: 6px;
       font-weight: 600;
+      justify-content: flex-end;
+      max-width: 100%;
+    }
+
+    .td-exchange {
+      text-align: right;
     }
 
     .status-dot {
@@ -333,7 +345,16 @@
     </div>
 
     <div class="table-wrap">
-      <table>
+      <table class="data-table">
+        <colgroup>
+          <col style="width: 13%;" />
+          <col style="width: 16%;" />
+          <col style="width: 12%;" />
+          <col style="width: 14%;" />
+          <col style="width: 9%;" />
+          <col style="width: 16%;" />
+          <col style="width: 12%;" />
+        </colgroup>
         <thead>
           <tr>
             <th class="sortable" data-sort="symbol">合约 <span id="sort-symbol"></span></th>
@@ -442,6 +463,22 @@
         minimumFractionDigits: 0,
         maximumFractionDigits: fractionDigits
       });
+    }
+
+    function formatPriceWithDeviation(lastPrice, markPrice) {
+      const priceStr = formatPrice(lastPrice);
+      if (!Number.isFinite(lastPrice) || !Number.isFinite(markPrice) || markPrice === 0) {
+        return priceStr;
+      }
+      const deviation = ((lastPrice - markPrice) / markPrice) * 100;
+      if (!Number.isFinite(deviation) || Math.abs(deviation) < 0.1) {
+        return priceStr;
+      }
+      const mag = Math.abs(deviation).toFixed(2);
+      if (deviation >= 0.1) {
+        return `${priceStr}<span class="rate-positive"> (+${mag}%)</span>`;
+      }
+      return `${priceStr}<span class="rate-negative"> (-${mag}%)</span>`;
     }
 
     function formatCountdown(targetTs, nowTs = Date.now()) {
@@ -650,12 +687,12 @@
         return `
           <tr class="${rowClass}">
             <td><strong>${row.baseSymbol}</strong></td>
-            <td class="align-right">${formatPrice(row.lastPrice)}</td>
+            <td class="align-right">${formatPriceWithDeviation(row.lastPrice, row.markPrice)}</td>
             <td class="align-right">${formatPrice(row.markPrice)}</td>
             <td class="align-right ${rateClass}">${formatRatePercent(rate)}</td>
             <td class="align-right">${trend}</td>
             <td class="align-right">${recentSettledText}</td>
-            <td class="align-right">
+            <td class="align-right td-exchange">
               <span class="exchange-status">
                 <span class="status-dot ${exchangeStatus.dotClass}"></span>${exchangeStatus.text}
               </span>
