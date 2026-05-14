@@ -301,6 +301,33 @@ app.get("/api/premium", async (req, res) => {
   }
 });
 
+app.get("/api/last-price", async (req, res) => {
+  try {
+    const response = await withTimeout("https://fapi.binance.com/fapi/v1/ticker/price");
+    if (!response.ok) {
+      throw new Error(`Binance ticker/price HTTP ${response.status}`);
+    }
+    const raw = await response.json();
+    const list = Array.isArray(raw) ? raw : raw && raw.symbol ? [raw] : [];
+    const data = list
+      .filter((item) => item && item.symbol && SYMBOLS.has(item.symbol))
+      .map((item) => ({
+        symbol: item.symbol,
+        price: item.price
+      }));
+    res.json({
+      success: true,
+      data,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    res.status(502).json({
+      success: false,
+      error: error.name === "AbortError" ? "请求 Binance 超时" : error.message
+    });
+  }
+});
+
 app.get("/api/alert-history", (req, res) => {
   res.json({ success: true, data: alertHistory });
 });
