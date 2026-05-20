@@ -347,13 +347,14 @@
     <div class="table-wrap">
       <table class="data-table">
         <colgroup>
-          <col style="width: 13%;" />
-          <col style="width: 16%;" />
           <col style="width: 12%;" />
           <col style="width: 14%;" />
-          <col style="width: 9%;" />
-          <col style="width: 16%;" />
+          <col style="width: 11%;" />
           <col style="width: 12%;" />
+          <col style="width: 12%;" />
+          <col style="width: 8%;" />
+          <col style="width: 14%;" />
+          <col style="width: 11%;" />
         </colgroup>
         <thead>
           <tr>
@@ -361,13 +362,14 @@
             <th class="sortable align-right" data-sort="lastPrice">最新价格 <span id="sort-lastPrice"></span></th>
             <th class="sortable align-right" data-sort="markPrice">标记价格 <span id="sort-markPrice"></span></th>
             <th class="sortable align-right" data-sort="rate">当前资金费率 <span id="sort-rate"></span></th>
+            <th class="align-right">BBG 现价</th>
             <th class="align-right">费率趋势</th>
             <th class="align-right">最新结算费率（参考）</th>
             <th class="sortable align-right" data-sort="exchange">交易所 <span id="sort-exchange"></span></th>
           </tr>
         </thead>
         <tbody id="table-body">
-          <tr><td colspan="7" class="muted">正在加载数据...</td></tr>
+          <tr><td colspan="8" class="muted">正在加载数据...</td></tr>
         </tbody>
       </table>
     </div>
@@ -433,6 +435,7 @@
     let marketRows = [];
     let previousRateMap = new Map();
     let recentSettledRateMap = new Map();
+    let bbgPriceMap = new Map();
     let activeFilter = "all";
     let sortState = { key: "rateAbs", order: "desc" };
     let lastUpdateAt = null;
@@ -661,7 +664,7 @@
     function renderTable() {
       const rows = sortRows(getFilteredRows(marketRows));
       if (!rows.length) {
-        el.tbody.innerHTML = `<tr><td colspan="7" class="muted">当前筛选条件下无数据</td></tr>`;
+        el.tbody.innerHTML = `<tr><td colspan="8" class="muted">当前筛选条件下无数据</td></tr>`;
         return;
       }
 
@@ -688,6 +691,8 @@
         const recentSettledText = recentSettledRate !== undefined
           ? formatRatePercent(recentSettledRate)
           : "-";
+        const bbgPrice = bbgPriceMap.get(row.symbol);
+        const bbgPriceText = bbgPrice !== undefined ? formatPrice(bbgPrice) : "—";
         const exchangeStatus = getExchangeStatus(row.symbol);
 
         return `
@@ -696,6 +701,7 @@
             <td class="align-right">${formatPriceWithDeviation(row.lastPrice, row.markPrice)}</td>
             <td class="align-right">${formatPrice(row.markPrice)}</td>
             <td class="align-right ${rateClass}">${formatRatePercent(rate)}</td>
+            <td class="align-right">${bbgPriceText}</td>
             <td class="align-right">${trend}</td>
             <td class="align-right">${recentSettledText}</td>
             <td class="align-right td-exchange">
@@ -785,14 +791,34 @@
       return map;
     }
 
+    async function fetchBBGPrices() {
+      try {
+        const res = await fetch("/api/bbg-prices", { cache: "no-store" });
+        if (!res.ok) return new Map();
+        const json = await res.json();
+        if (!json.success || !json.data) return new Map();
+        const map = new Map();
+        for (const [symbol, entry] of Object.entries(json.data)) {
+          const price = Number(entry && entry.price);
+          if (Number.isFinite(price)) {
+            map.set(symbol, price);
+          }
+        }
+        return map;
+      } catch {
+        return new Map();
+      }
+    }
+
     async function refreshData() {
       try {
         el.status.textContent = "更新中...";
 
-        const [batchData, fundingRateMap, lastPricePayload] = await Promise.all([
+        const [batchData, fundingRateMap, lastPricePayload, bbgMap] = await Promise.all([
           fetchPremiumIndexBatch(),
           fetchRecentFundingRates(),
-          fetchLastPrices()
+          fetchLastPrices(),
+          fetchBBGPrices()
         ]);
 
         const lastPriceMap = new Map();
@@ -830,6 +856,7 @@
 
         marketRows = rows;
         recentSettledRateMap = fundingRateMap;
+        bbgPriceMap = bbgMap;
         lastUpdateAt = new Date();
 
         updateStats();

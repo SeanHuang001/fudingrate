@@ -20,6 +20,138 @@ const EMAIL_CONFIG = {
   gmailAppPassword: "enbq hvbk lgpj ahhj"
 };
 
+// ============== BBG 行情模块 ==============
+
+const BBG_BASE_URL = "http://localhost:8000";  // 通过 SSH 反向隧道连接 BBG 服务
+const BBG_REFRESH_MS = 10000;                  // 每 10 秒拉一次
+const BBG_REQUEST_TIMEOUT_MS = 8000;           // 单次请求超时
+const BBG_STALE_THRESHOLD_MS = 60000;          // 超过 60 秒没更新视为离线
+
+// Binance 合约 → BBG ticker 映射
+const BBG_SYMBOL_MAP = {
+  "XAUUSDT":    "XAU Curncy",
+  "XAGUSDT":    "XAG Curncy",
+  "XPTUSDT":    "XPT Curncy",
+  "XPDUSDT":    "XPD Curncy",
+  "COPPERUSDT": "HG1 Comdty",
+  "CLUSDT":     "CL1 Comdty",
+  "BZUSDT":     "CO1 Comdty",
+  "NATGASUSDT": "NG1 Comdty",
+  "TSLAUSDT":   "TSLA US Equity",
+  "INTCUSDT":   "INTC US Equity",
+  "HOODUSDT":   "HOOD US Equity",
+  "MSTRUSDT":   "MSTR US Equity",
+  "AMZNUSDT":   "AMZN US Equity",
+  "CRCLUSDT":   "CRCL US Equity",
+  "COINUSDT":   "COIN US Equity",
+  "PLTRUSDT":   "PLTR US Equity",
+  "EWYUSDT":    "EWY US Equity",
+  "EWJUSDT":    "EWJ US Equity",
+  "PAYPUSDT":   "PYPL US Equity",
+  "METAUSDT":   "META US Equity",
+  "NVDAUSDT":   "NVDA US Equity",
+  "GOOGLUSDT":  "GOOGL US Equity",
+  "QQQUSDT":    "QQQ US Equity",
+  "SPYUSDT":    "SPY US Equity",
+  "AAPLUSDT":   "AAPL US Equity",
+  "TSMUSDT":    "TSM US Equity",
+  "MUUSDT":     "MU US Equity",
+  "SNDKUSDT":   "SNDK US Equity",
+  "MSFTUSDT":   "MSFT US Equity",
+  "AVGOUSDT":   "AVGO US Equity",
+  "BABAUSDT":   "BABA US Equity",
+  "AMDUSDT":    "AMD US Equity",
+  "QCOMUSDT":   "QCOM US Equity",
+  "USARUSDT":   "USAR US Equity",
+  "LITEUSDT":   "LITE US Equity",
+  "ORCLUSDT":   "ORCL US Equity",
+  "DISUSDT":    "DIS US Equity",
+  "UBERUSDT":   "UBER US Equity",
+  "CSCOUSDT":   "CSCO US Equity",
+  "HDUSDT":     "HD US Equity",
+  "CRWVUSDT":   "CRWV US Equity",
+  "WMTUSDT":    "WMT US Equity",
+  "JPMUSDT":    "JPM US Equity",
+  "VUSDT":      "V US Equity",
+  "BRKBUSDT":   "BRK/B US Equity",
+  "FLNCUSDT":   "FLNC US Equity",
+  "DRAMUSDT":   "DRAM US Equity",
+  "RKLBUSDT":   "RKLB US Equity",
+  "CBRSUSDT":   "CBRS US Equity"
+};
+
+// BBG ticker → Binance 合约 反向映射
+const BBG_REVERSE_MAP = Object.fromEntries(
+  Object.entries(BBG_SYMBOL_MAP).map(([k, v]) => [v, k])
+);
+
+// 内存缓存：{ binanceSymbol: { price, updatedAt } }
+const bbgPriceCache = new Map();
+let bbgLastFetchOk = 0;  // 上次成功拉取时间
+
+async function fetchBBGPricesOnce() {
+  const securities = Object.values(BBG_SYMBOL_MAP);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BBG_REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${BBG_BASE_URL}/api/reference`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        securities,
+        fields: ["PX_LAST"]
+      }),
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      throw new Error(`BBG HTTP ${res.status}`);
+    }
+
+    const json = await res.json();
+    const data = json.data || {};
+    const now = Date.now();
+    let okCount = 0;
+
+    for (const [bbgTicker, fields] of Object.entries(data)) {
+      const binanceSymbol = BBG_REVERSE_MAP[bbgTicker];
+      if (!binanceSymbol) continue;
+      const price = Number(fields && fields.PX_LAST);
+      if (!Number.isFinite(price)) continue;
+      bbgPriceCache.set(binanceSymbol, { price, updatedAt: now });
+      okCount += 1;
+    }
+
+    bbgLastFetchOk = now;
+    console.log(`[BBG] 拉取成功：${okCount}/${securities.length} 个标的有价格`);
+  } catch (err) {
+    console.log(`[BBG] 拉取失败：${err.name === "AbortError" ? "超时" : err.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function getBBGSnapshot() {
+  const out = {};
+  const now = Date.now();
+  for (const [symbol, entry] of bbgPriceCache.entries()) {
+    if (now - entry.updatedAt > BBG_STALE_THRESHOLD_MS) continue;  // 数据过期视为离线
+    out[symbol] = { price: entry.price, updatedAt: entry.updatedAt };
+  }
+  return out;
+}
+
+// 启动后立即拉一次，然后定时
+setTimeout(() => {
+  fetchBBGPricesOnce().catch(() => {});
+  setInterval(() => {
+    fetchBBGPricesOnce().catch(() => {});
+  }, BBG_REFRESH_MS);
+}, 2000);
+
+// ============== BBG 模块结束 ==============
+
 const ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000;
 const FUNDING_ALERT_THRESHOLD = 0.001;
 const lastAlertSentAt = new Map();
@@ -336,6 +468,15 @@ app.get("/api/last-price", async (req, res) => {
 
 app.get("/api/alert-history", (req, res) => {
   res.json({ success: true, data: alertHistory });
+});
+
+app.get("/api/bbg-prices", (req, res) => {
+  res.json({
+    success: true,
+    data: getBBGSnapshot(),
+    lastFetchOk: bbgLastFetchOk,
+    online: Date.now() - bbgLastFetchOk < BBG_STALE_THRESHOLD_MS
+  });
 });
 
 app.get("/api/funding-rate/:symbol", async (req, res) => {
