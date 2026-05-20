@@ -484,12 +484,12 @@
       });
     }
 
-    function formatPriceWithDeviation(lastPrice, markPrice) {
-      const priceStr = formatPrice(lastPrice);
-      if (!Number.isFinite(lastPrice) || !Number.isFinite(markPrice) || markPrice === 0) {
+    function formatPriceWithBasis(value, basis) {
+      const priceStr = formatPrice(value);
+      if (!Number.isFinite(value) || !Number.isFinite(basis) || basis === 0) {
         return priceStr;
       }
-      const deviation = ((lastPrice - markPrice) / markPrice) * 100;
+      const deviation = ((value - basis) / basis) * 100;
       if (!Number.isFinite(deviation) || Math.abs(deviation) < 0.1) {
         return priceStr;
       }
@@ -702,14 +702,16 @@
           ? formatRatePercent(recentSettledRate)
           : "-";
         const bbgPrice = bbgPriceMap.get(row.symbol);
-        const bbgPriceText = bbgPrice !== undefined ? formatPrice(bbgPrice) : "—";
+        const bbgPriceText = bbgPrice !== undefined
+          ? formatPriceWithBasis(bbgPrice, row.lastPrice)
+          : "—";
         const exchangeStatus = getExchangeStatus(row.symbol);
 
         return `
           <tr class="${rowClass}">
             <td><strong>${row.baseSymbol}</strong></td>
-            <td class="align-right">${formatPriceWithDeviation(row.lastPrice, row.markPrice)}</td>
-            <td class="align-right">${formatPrice(row.markPrice)}</td>
+            <td class="align-right">${formatPrice(row.lastPrice)}</td>
+            <td class="align-right">${formatPriceWithBasis(row.markPrice, row.lastPrice)}</td>
             <td class="align-right">${bbgPriceText}</td>
             <td class="align-right ${rateClass}">${formatRatePercent(rate)}</td>
             <td class="align-right">${trend}</td>
