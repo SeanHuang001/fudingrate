@@ -200,6 +200,16 @@
       text-align: right;
     }
 
+    thead th.col-settled,
+    tbody td.col-settled {
+      padding-right: 16px;
+    }
+
+    thead th.col-exchange,
+    tbody td.col-exchange {
+      padding-right: 28px;
+    }
+
     .status-dot {
       width: 8px;
       height: 8px;
@@ -347,25 +357,25 @@
     <div class="table-wrap">
       <table class="data-table">
         <colgroup>
-          <col style="width: 12%;" />
-          <col style="width: 14%;" />
-          <col style="width: 11%;" />
-          <col style="width: 12%;" />
-          <col style="width: 12%;" />
           <col style="width: 8%;" />
           <col style="width: 14%;" />
-          <col style="width: 11%;" />
+          <col style="width: 13%;" />
+          <col style="width: 13%;" />
+          <col style="width: 14%;" />
+          <col style="width: 8%;" />
+          <col style="width: 15%;" />
+          <col style="width: 15%;" />
         </colgroup>
         <thead>
           <tr>
             <th class="sortable" data-sort="symbol">合约 <span id="sort-symbol"></span></th>
             <th class="sortable align-right" data-sort="lastPrice">最新价格 <span id="sort-lastPrice"></span></th>
             <th class="sortable align-right" data-sort="markPrice">标记价格 <span id="sort-markPrice"></span></th>
-            <th class="sortable align-right" data-sort="rate">当前资金费率 <span id="sort-rate"></span></th>
             <th class="align-right">BBG 现价</th>
+            <th class="sortable align-right" data-sort="rate">当前资金费率 <span id="sort-rate"></span></th>
             <th class="align-right">费率趋势</th>
-            <th class="align-right">最新结算费率（参考）</th>
-            <th class="sortable align-right" data-sort="exchange">交易所 <span id="sort-exchange"></span></th>
+            <th class="align-right col-settled">最新结算费率（参考）</th>
+            <th class="sortable align-right col-exchange" data-sort="exchange">交易所 <span id="sort-exchange"></span></th>
           </tr>
         </thead>
         <tbody id="table-body">
@@ -700,11 +710,11 @@
             <td><strong>${row.baseSymbol}</strong></td>
             <td class="align-right">${formatPriceWithDeviation(row.lastPrice, row.markPrice)}</td>
             <td class="align-right">${formatPrice(row.markPrice)}</td>
-            <td class="align-right ${rateClass}">${formatRatePercent(rate)}</td>
             <td class="align-right">${bbgPriceText}</td>
+            <td class="align-right ${rateClass}">${formatRatePercent(rate)}</td>
             <td class="align-right">${trend}</td>
-            <td class="align-right">${recentSettledText}</td>
-            <td class="align-right td-exchange">
+            <td class="align-right col-settled">${recentSettledText}</td>
+            <td class="align-right col-exchange td-exchange">
               <span class="exchange-status">
                 <span class="status-dot ${exchangeStatus.dotClass}"></span>${exchangeStatus.text}
               </span>
