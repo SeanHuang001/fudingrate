@@ -145,6 +145,50 @@ async function fetchBBGPricesOnce() {
   }
 }
 
+// 强制拉取一次所有标的，忽略市场开盘判断，仅用于程序启动时建立初始缓存
+async function fetchBBGPricesForce() {
+  const securities = Object.values(BBG_SYMBOL_MAP);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BBG_REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${BBG_BASE_URL}/api/reference`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        securities,
+        fields: ["PX_LAST"]
+      }),
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      throw new Error(`BBG HTTP ${res.status}`);
+    }
+
+    const json = await res.json();
+    const data = json.data || {};
+    const now = Date.now();
+    let okCount = 0;
+
+    for (const [bbgTicker, fields] of Object.entries(data)) {
+      const binanceSymbol = BBG_REVERSE_MAP[bbgTicker];
+      if (!binanceSymbol) continue;
+      const price = Number(fields && fields.PX_LAST);
+      if (!Number.isFinite(price)) continue;
+      bbgPriceCache.set(binanceSymbol, { price, updatedAt: now });
+      okCount += 1;
+    }
+
+    bbgLastFetchOk = now;
+    console.log(`[BBG] 启动强制拉取成功：${okCount}/${securities.length} 个标的有价格`);
+  } catch (err) {
+    console.log(`[BBG] 启动强制拉取失败：${err.name === "AbortError" ? "超时" : err.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function getBBGSnapshot() {
   const out = {};
   const now = Date.now();
@@ -155,9 +199,9 @@ function getBBGSnapshot() {
   return out;
 }
 
-// 启动后立即拉一次，然后定时
+// 启动时强制拉一次建立缓存，之后仅在市场开盘时定时拉取
 setTimeout(() => {
-  fetchBBGPricesOnce().catch(() => {});
+  fetchBBGPricesForce().catch(() => {});
   setInterval(() => {
     fetchBBGPricesOnce().catch(() => {});
   }, BBG_REFRESH_MS);
