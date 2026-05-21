@@ -23,9 +23,9 @@ const EMAIL_CONFIG = {
 // ============== BBG 行情模块 ==============
 
 const BBG_BASE_URL = "http://localhost:8000";  // 通过 SSH 反向隧道连接 BBG 服务
-const BBG_REFRESH_MS = 10000;                  // 每 10 秒拉一次
+const BBG_REFRESH_MS = 5 * 60 * 1000;          // 5 分钟
 const BBG_REQUEST_TIMEOUT_MS = 8000;           // 单次请求超时
-const BBG_STALE_THRESHOLD_MS = 60000;          // 超过 60 秒没更新视为离线
+const BBG_STALE_THRESHOLD_MS = 10 * 60 * 1000;  // 10 分钟，大于刷新间隔的 2 倍
 
 // Binance 合约 → BBG ticker 映射
 const BBG_SYMBOL_MAP = {
@@ -90,7 +90,20 @@ const bbgPriceCache = new Map();
 let bbgLastFetchOk = 0;  // 上次成功拉取时间
 
 async function fetchBBGPricesOnce() {
-  const securities = Object.values(BBG_SYMBOL_MAP);
+  const securities = [];
+  for (const [binanceSymbol, bbgTicker] of Object.entries(BBG_SYMBOL_MAP)) {
+    if (US_EQUITY_SYMBOLS.has(binanceSymbol)) {
+      if (isUSEquityExtendedOpen()) securities.push(bbgTicker);
+    } else if (CME_NYMEX_SYMBOLS.has(binanceSymbol)) {
+      if (isCMENymexMarketOpen()) securities.push(bbgTicker);
+    }
+  }
+
+  if (securities.length === 0) {
+    console.log("[BBG] 所有相关市场休市，跳过本轮拉取");
+    return;
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), BBG_REQUEST_TIMEOUT_MS);
 
@@ -246,6 +259,21 @@ function isUSEquityMarketOpen(now = new Date()) {
   const minutes = getMinutesSinceMidnightET(now);
   const open = 9 * 60 + 30;
   const close = 16 * 60;
+  return minutes >= open && minutes < close;
+}
+
+// 美股扩展时段：04:00 - 20:00 ET（盘前+盘中+盘后），周末和节假日休市
+function isUSEquityExtendedOpen(now = new Date()) {
+  const dateKey = getCalendarDateET(now);
+  const year = parseInt(dateKey.slice(0, 4), 10);
+  if (year === 2026 && US_EQUITY_HOLIDAYS_ET_2026.has(dateKey)) {
+    return false;
+  }
+  const wd = getWeekdayET(now);
+  if (wd === 0 || wd === 6) return false;
+  const minutes = getMinutesSinceMidnightET(now);
+  const open = 4 * 60;           // 04:00 ET
+  const close = 20 * 60;         // 20:00 ET
   return minutes >= open && minutes < close;
 }
 
