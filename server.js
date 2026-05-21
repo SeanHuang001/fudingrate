@@ -47,7 +47,7 @@ const BBG_SYMBOL_MAP = {
   "PLTRUSDT":   "PLTR US Equity",
   "EWYUSDT":    "EWY US Equity",
   "EWJUSDT":    "EWJ US Equity",
-  "PAYPUSDT":   "PYPL US Equity",
+  "PAYPUSDT":   "PAYP US Equity",
   "METAUSDT":   "META US Equity",
   "NVDAUSDT":   "NVDA US Equity",
   "GOOGLUSDT":  "GOOGL US Equity",
@@ -130,8 +130,12 @@ async function fetchBBGPricesOnce() {
     for (const [bbgTicker, fields] of Object.entries(data)) {
       const binanceSymbol = BBG_REVERSE_MAP[bbgTicker];
       if (!binanceSymbol) continue;
-      const price = Number(fields && fields.PX_LAST);
+      let price = Number(fields && fields.PX_LAST);
       if (!Number.isFinite(price)) continue;
+      // 单位换算：COMEX 铜期货报价为美分/磅，转成美元/磅以匹配 Binance
+      if (binanceSymbol === "COPPERUSDT") {
+        price = price / 100;
+      }
       bbgPriceCache.set(binanceSymbol, { price, updatedAt: now });
       okCount += 1;
     }
@@ -174,8 +178,12 @@ async function fetchBBGPricesForce() {
     for (const [bbgTicker, fields] of Object.entries(data)) {
       const binanceSymbol = BBG_REVERSE_MAP[bbgTicker];
       if (!binanceSymbol) continue;
-      const price = Number(fields && fields.PX_LAST);
+      let price = Number(fields && fields.PX_LAST);
       if (!Number.isFinite(price)) continue;
+      // 单位换算：COMEX 铜期货报价为美分/磅，转成美元/磅以匹配 Binance
+      if (binanceSymbol === "COPPERUSDT") {
+        price = price / 100;
+      }
       bbgPriceCache.set(binanceSymbol, { price, updatedAt: now });
       okCount += 1;
     }
