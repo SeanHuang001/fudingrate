@@ -25,7 +25,7 @@ const EMAIL_CONFIG = {
 const BBG_BASE_URL = "http://localhost:8000";  // 通过 SSH 反向隧道连接 BBG 服务
 const BBG_REFRESH_MS = 5 * 60 * 1000;          // 5 分钟
 const BBG_REQUEST_TIMEOUT_MS = 8000;           // 单次请求超时
-const BBG_STALE_THRESHOLD_MS = 10 * 60 * 1000;  // 10 分钟，大于刷新间隔的 2 倍
+const BBG_STALE_THRESHOLD_MS = 72 * 60 * 60 * 1000;  // 72 小时，覆盖整个周末
 
 // Binance 合约 → BBG ticker 映射
 const BBG_SYMBOL_MAP = {
