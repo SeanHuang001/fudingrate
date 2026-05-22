@@ -88,6 +88,8 @@ const BBG_REVERSE_MAP = Object.fromEntries(
 // 内存缓存：{ binanceSymbol: { price, updatedAt } }
 const bbgPriceCache = new Map();
 let bbgLastFetchOk = 0;  // 上次成功拉取时间
+let bbgLastFetchOkEquity = 0;   // 美股/ETF 最后成功拉取时间
+let bbgLastFetchOkFutures = 0;  // 期货/金属 最后成功拉取时间
 
 async function fetchBBGPricesOnce() {
   const securities = [];
@@ -138,6 +140,11 @@ async function fetchBBGPricesOnce() {
       }
       bbgPriceCache.set(binanceSymbol, { price, updatedAt: now });
       okCount += 1;
+      if (US_EQUITY_SYMBOLS.has(binanceSymbol)) {
+        bbgLastFetchOkEquity = now;
+      } else if (CME_NYMEX_SYMBOLS.has(binanceSymbol)) {
+        bbgLastFetchOkFutures = now;
+      }
     }
 
     bbgLastFetchOk = now;
@@ -186,6 +193,11 @@ async function fetchBBGPricesForce() {
       }
       bbgPriceCache.set(binanceSymbol, { price, updatedAt: now });
       okCount += 1;
+      if (US_EQUITY_SYMBOLS.has(binanceSymbol)) {
+        bbgLastFetchOkEquity = now;
+      } else if (CME_NYMEX_SYMBOLS.has(binanceSymbol)) {
+        bbgLastFetchOkFutures = now;
+      }
     }
 
     bbgLastFetchOk = now;
@@ -555,6 +567,8 @@ app.get("/api/bbg-prices", (req, res) => {
     success: true,
     data: getBBGSnapshot(),
     lastFetchOk: bbgLastFetchOk,
+    lastFetchOkEquity: bbgLastFetchOkEquity,
+    lastFetchOkFutures: bbgLastFetchOkFutures,
     online: Date.now() - bbgLastFetchOk < BBG_STALE_THRESHOLD_MS
   });
 });

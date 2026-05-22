@@ -351,7 +351,11 @@
       <button class="btn" data-filter="positive">仅正费率</button>
       <button class="btn" data-filter="negative">仅负费率</button>
       <button class="btn" id="btn-history" style="margin-left: 12px; background: #374151; color: white;">推送历史</button>
-      <span class="status" id="status-text">初始化中...</span>
+      <span class="status" id="status-text" style="line-height: 1.5; text-align: right; font-size: 12px;">
+        <span id="status-binance">币安：-</span><br>
+        <span id="status-bbg-futures">BBG期货：-</span><br>
+        <span id="status-bbg-equity">BBG美股：-</span>
+      </span>
     </div>
 
     <div class="table-wrap">
@@ -446,6 +450,8 @@
     let previousRateMap = new Map();
     let recentSettledRateMap = new Map();
     let bbgPriceMap = new Map();
+    let bbgEquityUpdatedAt = null;
+    let bbgFuturesUpdatedAt = null;
     let activeFilter = "all";
     let sortState = { key: "rateAbs", order: "desc" };
     let lastUpdateAt = null;
@@ -498,6 +504,11 @@
         return `${priceStr}<span class="rate-positive"> (+${mag}%)</span>`;
       }
       return `${priceStr}<span class="rate-negative"> (-${mag}%)</span>`;
+    }
+
+    function formatClockTime(ts) {
+      if (!ts || !Number.isFinite(Number(ts))) return "-";
+      return new Date(Number(ts)).toLocaleTimeString("zh-CN", { hour12: false });
     }
 
     function formatCountdown(targetTs, nowTs = Date.now()) {
@@ -816,6 +827,8 @@
             map.set(symbol, price);
           }
         }
+        bbgEquityUpdatedAt = json.lastFetchOkEquity || null;
+        bbgFuturesUpdatedAt = json.lastFetchOkFutures || null;
         return map;
       } catch {
         return new Map();
@@ -824,7 +837,7 @@
 
     async function refreshData() {
       try {
-        el.status.textContent = "更新中...";
+        document.getElementById("status-binance").textContent = "更新中...";
 
         const [batchData, fundingRateMap, lastPricePayload, bbgMap] = await Promise.all([
           fetchPremiumIndexBatch(),
@@ -875,9 +888,14 @@
         renderTable();
         updateSortIndicators();
 
-        el.status.textContent = `已更新 ${lastUpdateAt.toLocaleTimeString("zh-CN", { hour12: false })}`;
+        document.getElementById("status-binance").textContent =
+          `币安：${lastUpdateAt.toLocaleTimeString("zh-CN", { hour12: false })}`;
+        document.getElementById("status-bbg-futures").textContent =
+          `BBG期货：${formatClockTime(bbgFuturesUpdatedAt)}`;
+        document.getElementById("status-bbg-equity").textContent =
+          `BBG美股：${formatClockTime(bbgEquityUpdatedAt)}`;
       } catch (err) {
-        el.status.textContent = `更新失败：${err.message}`;
+        document.getElementById("status-binance").textContent = `更新失败：${err.message}`;
       }
     }
 
